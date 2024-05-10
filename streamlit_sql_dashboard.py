@@ -1,4 +1,16 @@
-# mysql-connector-python==8.4.0 streamlit==1.34.0
+# main libraries are mysql-connector-python==8.4.0 streamlit==1.34.0
+"""
+database look like this
++---------------------+-----------+-------------------+-------+
+| date_time           | device_id | feature_type      | score |
++---------------------+-----------+-------------------+-------+
+| 2024-05-09 12:17:16 |      1212 | df_5_sec_pkt_rate |     1 |
+| 2024-05-09 12:17:16 |      1212 | df_data_ofs       |     2 |
+| 2024-05-09 12:17:16 |      1212 | df_dst_ip         |     1 |
+| 2024-05-09 12:17:16 |      1212 | df_dst_ports      |     1 |
+| 2024-05-09 12:17:16 |      1212 | df_fft_time_diff  |     8 |
+
+"""
 import streamlit as st
 import mysql.connector
 import pandas as pd
@@ -21,10 +33,10 @@ table_name = "dp_events"
 conn = connect_to_mysql()
 cursor = conn.cursor()
 # cursor.execute("SELECT * FROM {} limit 10".format(table_name))
-cursor.execute("select * from dp_events")
+cursor.execute("SELECT * FROM dp_events WHERE DATE(date_time) = '2024-05-10';")
 rows = cursor.fetchall()
 # st.title (f"Device Profiler Dashboard for {pd.Timestamp.today().date()}")
-st.title ("Device Profiler Dashboard")
+
 
 data = pd.DataFrame(rows, columns=["date_time", "device_id","feature_type","score"])
 # st.dataframe(data)
@@ -38,14 +50,15 @@ today_data = data[data['date_time'].dt.date == pd.Timestamp.today().date()]
 # Display the data
 devices = data['device_id'].unique().tolist()
 
-chart_visual = st.sidebar.selectbox('Select Charts/Plot type', 
-									('Home', 'Risk Score Over Time', 'Bar Chart', 'Bubble Chart')) 
+chart_visual = st.sidebar.selectbox('Select From Menu', 
+									('Home', 'Risk Score Over Time', 'Analyze Risk Score in Detail', 'Bubble Chart')) 
 
 
 
 
 fig = go.Figure() 
-today_risk = data[(data['feature_type'] == "var_cols") & (data['date_time'].dt.date == datetime.now().date())]
+today_risk = data[(data['feature_type'] == "var_cols")]
+# today_risk = data[(data['feature_type'] == "var_cols") & (data['date_time'].dt.date == datetime.now().date())]
 # st.dataframe(today_risk)
 
 
@@ -62,11 +75,10 @@ def device_activity():
         df,
         x="device_id",
         y="Activity",
-        color="device_id",
-        text="Activity",
-        text_auto=True
+        color="Activity",
+        text="device_id",
     )
-    st.subheader(f'Activity of the devices for today so far')
+    st.title(f'Device Activity Summary')
     st.plotly_chart(fig)
 # Plotting
 def plot_risk_over_time(device):
@@ -76,15 +88,48 @@ def plot_risk_over_time(device):
         today_risk[(today_risk['device_id'] == device)],
         columns=['date_time', 'score']
         )
-    st.subheader(f'Risk score over time for device {device}')
+    # st.subheader(f'Risk score over time for device {device}')
+    st.subheader(device)
     st.line_chart(chart_data, x='date_time', y='score')
 
+
+
+def plot_risk_in_detail(device):
+    
+    feature_scores = (
+        data[data['device_id'] == device][['feature_type', 'score']].groupby("feature_type")
+        .mean()
+        .reset_index()
+    )
+ 
+    feature_scores = pd.DataFrame(feature_scores, columns=['feature_type', 'score'])
+    fig = px.bar(
+        feature_scores,
+        x="feature_type",
+        y="score",
+        color="score",
+        text="feature_type",
+    )
+    st.subheader(device)
+    st.plotly_chart(fig)
+    # # st.dataframe(today_risk_1212[['date_time', 'score']].head())
+    # chart_data = pd.DataFrame(
+    #     today_risk[(today_risk['device_id'] == device)],
+    #     columns=['date_time', 'score']
+    #     )
+    # # st.subheader(f'Risk score over time for device {device}')
+    # st.subheader(device)
+    # st.line_chart(chart_data, x='date_time', y='score')
+
 if chart_visual == 'Home': 
+    # st.title ("Device Profiler Dashboard")
+    
     device_activity()
     # 
     # st.balloons()
 
 elif chart_visual == 'Risk Score Over Time': 
+    st.title(f'Risk score over time')
     # for device in devices:
     # st.progress(len(data) - len(today_risk))
     options = ['all'] + devices
@@ -97,3 +142,17 @@ elif chart_visual == 'Risk Score Over Time':
             plot_risk_over_time(device)
     else:
         plot_risk_over_time(selected_status)
+
+
+elif chart_visual == 'Analyze Risk Score in Detail': 
+    st.title(f'Individual feature set scores')
+    # for device in devices:
+    # st.progress(len(data) - len(today_risk))
+    options = ['all'] + devices
+    selected_status = st.sidebar.selectbox('Select device',options = options) 
+    if selected_status == 'all':
+        for device in devices:
+            plot_risk_in_detail(device)
+    else:
+        plot_risk_in_detail(selected_status)
+
